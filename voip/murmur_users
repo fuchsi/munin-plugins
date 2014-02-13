@@ -117,8 +117,9 @@ if ($conf) {
 # Fetch handle to remote object
 $object = $service->get_object("/1");
 
-my @players = $object->getPlayers();
-$users = @players;
+my $players = $object->getPlayers();
+
+$users = @{$players};
 
 print "total_maxusers.value ", $maxusers, "\n";
 print "total_online.value ", $users, "\n";
