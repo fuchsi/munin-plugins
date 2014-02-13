@@ -1,0 +1,126 @@
+#!/usr/bin/env perl
+# -*- perl -*-
+
+=head1 NAME
+
+murmur_users - Plugin to monitor murmur users
+
+=head1 CONFIGURATION
+
+No configuration
+
+=head1 AUTHORS
+
+Original Author: Daniel Müller <blackperl@bastard-networks.de>
+
+=head1 LICENSE
+
+GPLv2
+
+=head1 MAGIC MARKERS
+
+ #%# family=auto
+ #%# capabilities=autoconf
+
+=cut
+
+use strict;
+use warnings;
+
+use Munin::Plugin;
+
+if ($ARGV[0] and $ARGV[0] eq "autoconf") {
+    if (try_load('Net::DBus')) {
+		print "yes\n";
+		exit 0;
+    } else {
+		print "no (Net::DBus not found)\n";
+		exit 0;
+    }
+}
+
+if ($ARGV[0] and $ARGV[0] eq "config") {	
+	print "graph_title Mumble Users", "\n";
+	print "graph_vlabel Connected Users", "\n";
+	print "graph_category VoIP", "\n";
+	print "graph_info This graph shows the number of connected users on a murmur server", "\n";
+	print "total_maxusers.label Maximum allowed users", "\n";
+	print "total_maxusers.type GAUGE", "\n";
+	print "total_online.label Connected users", "\n";
+	print "total_online.type GAUGE", "\n";
+
+	exit 0;
+}
+
+sub try_load {
+  my $mod = shift;
+
+  eval("use $mod");
+
+  if ($@) {    
+    return(0);
+  } else {
+    return(1);
+  }
+}
+
+# If we're being run as a CGI in suexec, $HOME doesn't exist. Fake it.
+my $home = (getpwuid($<))[7];
+
+# This needs to be done before "use Net::DBus"
+if (open(F, "$home/murmur/.dbus.sh")) {
+  while(<F>) {
+    chomp();
+    if ($_ =~ /^(.+?)\='(.+)';$/) {
+      $ENV{$1}=$2;
+    }
+  }
+  close(F);
+}
+
+use Net::DBus;
+
+my $bus;
+my $service;
+
+# First try the system bus
+eval {
+  $bus=Net::DBus->system();
+  $service = $bus->get_service("net.sourceforge.mumble.murmur");
+};
+
+# If that failed, the session bus
+if (! $service) {
+  eval {
+    $bus = Net::DBus->session();
+    $service = $bus->get_service("net.sourceforge.mumble.murmur");
+  }
+}
+
+die "Murmur service not found" if (! $service);
+
+my $maxusers = 0;
+my $users = 0;
+
+my $object = $service->get_object('/');
+
+my $conf = $object->getDefaultConf();
+
+$maxusers = $conf->{'users'};
+
+$conf = $object->getConf(1, 'users');
+
+if ($conf) {
+	$maxusers = $conf;
+}
+
+# Fetch handle to remote object
+$object = $service->get_object("/1");
+
+my @players = $object->getPlayers();
+$users = @players;
+
+print "total_maxusers.value ", $maxusers, "\n";
+print "total_online.value ", $users, "\n";
+
+# vim:syntax=perl:ts=4
